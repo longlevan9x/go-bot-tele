@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,117 +12,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-// ---- CÁC STRUCT ĐỂ PARSE DỮ LIỆU ----
-
-// Struct cho webhook từ Telegram
-type Update struct {
-	UpdateID int     `json:"update_id"`
-	Message  Message `json:"message"`
-}
-
-type Message struct {
-	Chat Chat   `json:"chat"`
-	Text string `json:"text"`
-}
-
-type Chat struct {
-	ID int `json:"id"`
-}
-
-// Struct cho API giá Bitcoin (CoinGecko)
-type BitcoinPrice struct {
-	Bitcoin struct {
-		USD float64 `json:"usd"`
-	} `json:"bitcoin"`
-}
-
-// Struct cho API tỷ giá (open.er-api.com)
-type ExchangeRate struct {
-	Rates map[string]float64 `json:"rates"`
-}
-
-// Struct cho XML giá vàng SJC
-type SjcXML struct {
-	XMLName  xml.Name `xml:"root"`
-	Title    string   `xml:"title"`
-	Url      string   `xml:"url"`
-	Ratelist Ratelist `xml:"ratelist"`
-}
-type Ratelist struct {
-	XMLName  xml.Name `xml:"ratelist"`
-	City     []City   `xml:"city"`
-	DateTime string   `xml:"updated"`
-}
-type City struct {
-	XMLName xml.Name `xml:"city"`
-	Name    string   `xml:"name,attr"`
-	Item    []Item   `xml:"item"`
-}
-type Item struct {
-	XMLName xml.Name `xml:"item"`
-	Buy     string   `xml:"buy,attr"`
-	Sell    string   `xml:"sell,attr"`
-	Type    string   `xml:"type,attr"`
-}
-
-// Struct cho XML tỷ giá Vietcombank
-type VcbExrateList struct {
-	XMLName xml.Name    `xml:"ExrateList"`
-	Exrate  []VcbExrate `xml:"Exrate"`
-}
-type VcbExrate struct {
-	CurrencyCode string `xml:"CurrencyCode,attr"`
-	CurrencyName string `xml:"CurrencyName,attr"`
-	Buy          string `xml:"Buy,attr"`
-	Transfer     string `xml:"Transfer,attr"`
-	Sell         string `xml:"Sell,attr"`
-}
-
-// Struct cho APi vang.today
-type VangTodayResponse struct {
-	Success   bool                `json:"success"`
-	Timestamp int64               `json:"timestamp"`
-	Prices    map[string]GoldItem `json:"prices"`
-}
-
-type GoldItem struct {
-	Name       string  `json:"name"`
-	Buy        float64 `json:"buy"`
-	Sell       float64 `json:"sell"`
-	ChangeBuy  float64 `json:"change_buy"`
-	ChangeSell float64 `json:"change_sell"`
-	Currency   string  `json:"currency"`
-}
-
-var goldTypeMap = map[string]string{
-	"XAUUSD":      "Vàng Thế Giới (XAU/USD)",
-	"SJL1L10":     "SJC 9999",
-	"SJ9999":      "Nhẫn SJC",
-	"DOHNL":       "DOJI Hà Nội",
-	"DOHCML":      "DOJI HCM",
-	"DOJINHTV":    "DOJI Nữ Trang",
-	"BTSJC":       "Bảo Tín SJC",
-	"BT9999NTT":   "Bảo Tín 9999",
-	"PQHNVM":      "PNJ Hà Nội",
-	"PQHN24NTT":   "PNJ 24K",
-	"VNGSJC":      "VN Gold SJC",
-	"VIETTINMSJC": "Viettin SJC",
-}
-
-var goldTypeOrder = []string{
-	"XAUUSD",
-	"SJL1L10",
-	"SJ9999",
-	"DOHNL",
-	"DOHCML",
-	"DOJINHTV",
-	"BTSJC",
-	"BT9999NTT",
-	"PQHNVM",
-	"PQHN24NTT",
-	"VNGSJC",
-	"VIETTINMSJC",
-}
+// ---- CÁC HÀM LẤY DỮ LIỆU ----
 
 // ---- CÁC HÀM LẤY DỮ LIỆU ----
 
@@ -158,24 +47,25 @@ func getBitcoinPrice() (string, error) {
 	return fmt.Sprintf("💰 **Giá Bitcoin (USD):** `$%s`", formatFloat(price.Bitcoin.USD)), nil
 }
 
-// Lấy giá vàng thế giới (Scraping)
+// Lấy giá vàng thế giới (API vang.today)
 func getGlobalGoldPrice() (string, error) {
-	res, err := http.Get("https://goldprice.org/")
+	url := "https://www.vang.today/api/prices?type=XAUUSD"
+	res, err := makeRequest(url)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("không thể truy cập vang.today: %v", err)
 	}
 	defer res.Body.Close()
 
-	doc, err := goquery.NewDocumentFromReader(res.Body)
-	if err != nil {
-		return "", err
+	var data VangTodaySingleResponse
+	if err := json.NewDecoder(res.Body).Decode(&data); err != nil {
+		return "", fmt.Errorf("lỗi đọc dữ liệu API: %v", err)
 	}
 
-	priceStr := doc.Find("#gpxticker-spot-bid").Text()
-	priceStr = strings.Replace(priceStr, ",", "", -1) // Bỏ dấu phẩy
-	price, _ := strconv.ParseFloat(priceStr, 64)
+	if !data.Success {
+		return "", fmt.Errorf("API không trả về dữ liệu thành công")
+	}
 
-	return fmt.Sprintf("🥇 **Giá Vàng Thế Giới (USD/oz):** `$%s`", formatFloat(price)), nil
+	return fmt.Sprintf("🥇 **Giá Vàng Thế Giới (USD/oz):** `$%s`", formatFloat(data.Buy)), nil
 }
 
 // Lấy giá vàng tổng hợp từ vang.today
@@ -250,7 +140,6 @@ func getUsdJpyRate() (string, error) {
 	return fmt.Sprintf("🇺🇸/🇯🇵 **Tỷ giá USD/JPY:** `1 USD = %s JPY`", formatFloat(jpyRate)), nil
 }
 
-
 // Lấy tỷ giá JPY/VND từ Google Finance
 func getJpyVndRate() (string, error) {
 	url := "https://www.google.com/finance/quote/JPY-VND"
@@ -304,10 +193,45 @@ func sendTelegramMessage(chatID int, text string) {
 
 // Hàm handler chính mà Vercel sẽ gọi
 func Handler(w http.ResponseWriter, r *http.Request) {
+	// Kiểm tra xem có phải là cron job không
+	if r.URL.Query().Get("mode") == "cron" {
+		chatIDStr := os.Getenv("CHAT_ID")
+		if chatIDStr == "" {
+			log.Println("CHAT_ID not set for cron job")
+			http.Error(w, "CHAT_ID not set", http.StatusInternalServerError)
+			return
+		}
+
+		chatID, err := strconv.Atoi(chatIDStr)
+		if err != nil {
+			log.Printf("Invalid CHAT_ID: %v", err)
+			http.Error(w, "Invalid CHAT_ID", http.StatusInternalServerError)
+			return
+		}
+
+		price, err := getVnGoldPrice()
+		if err != nil {
+			log.Printf("Error getting gold price for cron: %v", err)
+			// Vẫn báo OK để Vercel không retry liên tục nếu lỗi do nguồn
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		sendTelegramMessage(chatID, price)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Cron job executed"))
+		return
+	}
+
+	// Xử lý webhook từ Telegram (POST request)
 	var update Update
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
-		log.Printf("Error decoding request: %v", err)
-		http.Error(w, "Bad Request", http.StatusBadRequest)
+		// Chỉ log nếu đây thực sự là POST request mà decode lỗi
+		if r.Method == "POST" {
+			log.Printf("Error decoding request: %v", err)
+		}
+		// Trả về 200 để Telegram không gửi lại request liên tục
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 

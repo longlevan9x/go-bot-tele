@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/handler?mode=cron",
+      "schedule": "0 * * * *"
+    }
+  ],
   "builds": [
     {
       "src": "api/handler.go",

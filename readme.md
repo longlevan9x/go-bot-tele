@@ -124,6 +124,24 @@ Sau khi Vercel triển khai xong, bạn sẽ có một URL (ví dụ: `https://y
     ```
 4.  Nếu trình duyệt trả về: `{"ok":true,"result":true,"description":"Webhook was set"}`, bạn đã thành công!
 
+### Bước 7: Thiết Lập Tự Động Cập Nhật (Cron Job)
+
+Vì Vercel Free Tier giới hạn cron job, chúng ta dùng **GitHub Actions** để gọi bot mỗi giờ. Để bảo mật URL, chúng ta dùng GitHub Secrets.
+
+1.  **Lấy URL Cron của bạn:**
+    URL sẽ có dạng: `https://<TEN_DU_AN_CUA_BAN>.vercel.app/api/handler?mode=cron`
+
+2.  **Thêm Secret trên Github:**
+    -   Vào repository của bạn trên Github.
+    -   Chọn **Settings** -> **Secrets and variables** -> **Actions**.
+    -   Nhấn **New repository secret**.
+    -   **Name**: `CRON_URL`
+    -   **Secret**: Dán URL Cron của bạn vào đây.
+    -   Nhấn **Add secret**.
+
+3.  **Kích hoạt:**
+    GitHub Actions sẽ tự động chạy theo lịch trình. Bạn có thể kiểm tra trong tab **Actions** của repository.
+
 ---
 
 ## 🐞 Chẩn Đoán và Sửa Lỗi

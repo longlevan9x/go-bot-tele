@@ -356,15 +356,22 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		price, err := getVnGoldPrice()
+		// Lấy giá vàng
+		goldPrice, err := getVnGoldPrice()
 		if err != nil {
 			log.Printf("Error getting gold price for cron: %v", err)
-			// Vẫn báo OK để Vercel không retry liên tục nếu lỗi do nguồn
-			w.WriteHeader(http.StatusOK)
-			return
+		} else {
+			sendTelegramMessage(chatID, goldPrice)
 		}
 
-		sendTelegramMessage(chatID, price)
+		// Lấy tỷ giá JPY/VND
+		jpyRate, err := getJpyVndRate()
+		if err != nil {
+			log.Printf("Error getting JPY/VND rate for cron: %v", err)
+		} else {
+			sendTelegramMessage(chatID, jpyRate)
+		}
+
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Cron job executed"))
 		return

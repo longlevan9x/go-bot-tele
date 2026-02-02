@@ -1,0 +1,16 @@
+name: Hourly Gold Price Update
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Runs at minute 0 of every hour
+  workflow_dispatch: # Allows manual triggering from GitHub UI
+
+jobs:
+  trigger_bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel Function
+        run: |
+          # Replace <YOUR_VERCEL_PROJECT_URL> with your actual Vercel project domain
+          # Example: https://my-bot.vercel.app/api/handler?mode=cron
+          curl -X GET "https://go-bot-tele.vercel.app/api/handler?mode=cron"

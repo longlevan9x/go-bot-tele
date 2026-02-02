@@ -321,9 +321,20 @@ func sendTelegramMessage(chatID int, text string) {
 		return
 	}
 
-	_, err = http.Post(apiURL, "application/json", bytes.NewBuffer(jsonBody))
+	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		log.Printf("Error sending message to Telegram: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var respBody map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&respBody); err == nil {
+			log.Printf("Telegram API Error: %v", respBody)
+		} else {
+			log.Printf("Telegram API Error (Status %d)", resp.StatusCode)
+		}
 	}
 }
 
@@ -380,6 +391,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	// Phân tích lệnh từ người dùng
+	log.Printf("Received message from Chat ID: %d", update.Message.Chat.ID)
 	switch update.Message.Text {
 	case "/start":
 		responseText = "Chào mừng bạn đến với Bot Tra Cứu Giá! Hãy thử các lệnh: /bitcoin, /vang, /vangvn, /usdjpy, /jpyvnd"

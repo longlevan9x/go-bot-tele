@@ -1,7 +1,14 @@
 {
-  "functions": {
-    "api/handler.go": {
-      "runtime": "vercel-go@1.0.0"
+  "builds": [
+    {
+      "src": "api/handler.go",
+      "use": "@vercel/go"
     }
-  }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/handler",
+      "destination": "/api/handler.go"
+    }
+  ]
 }

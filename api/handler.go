@@ -119,38 +119,57 @@ func getGlobalGoldPrice() (string, error) {
 	return fmt.Sprintf("🥇 **Giá Vàng Thế Giới (USD/oz):** `$%s`", formatFloat(price)), nil
 }
 
-// Lấy giá vàng SJC
+// Lấy giá vàng SJC từ trang giavang.org
 func getVnGoldPrice() (string, error) {
-	// SJC cung cấp file XML công khai
-	resp, err := http.Get("https://sjc.com.vn/xml/tygiavang.xml")
+	url := "https://giavang.org/"
+
+	res, err := makeRequest(url)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("không thể truy cập giavang.org: %v", err)
 	}
-	defer resp.Body.Close()
+	defer res.Body.Close()
 
-	byteValue, _ := io.ReadAll(resp.Body)
-	var sjcData SjcXML
-	xml.Unmarshal(byteValue, &sjcData)
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		return "", fmt.Errorf("lỗi đọc dữ liệu trang: %v", err)
+	}
 
-	var result strings.Builder
-	result.WriteString(fmt.Sprintf("🇻🇳 **Giá Vàng SJC** (cập nhật lúc %s)\n", sjcData.Ratelist.DateTime))
-	result.WriteString("------------------------------------\n")
+	var buyPrice, sellPrice, updateTime string
 
-	// Lấy giá tại TP.HCM
-	for _, city := range sjcData.Ratelist.City {
-		if city.Name == "Hồ Chí Minh" {
-			for _, item := range city.Item {
-				if strings.Contains(item.Type, "SJC") { // Chỉ lấy các loại vàng SJC
-					buyPrice, _ := strconv.ParseFloat(item.Buy, 64)
-					sellPrice, _ := strconv.ParseFloat(item.Sell, 64)
-					result.WriteString(fmt.Sprintf("**%s**\n", item.Type))
-					result.WriteString(fmt.Sprintf("  - Mua: `%s`\n", formatFloat(buyPrice*1000)))
-					result.WriteString(fmt.Sprintf("  - Bán: `%s`\n", formatFloat(sellPrice*1000)))
-				}
-			}
-			break
+	// Tìm đến bảng giá SJC và duyệt qua từng hàng
+	doc.Find("#giasjc tbody tr").EachWithBreak(func(i int, s *goquery.Selection) bool {
+		// Lấy tên loại vàng ở cột đầu tiên
+		label := s.Find("td").First().Text()
+
+		// Chúng ta chỉ quan tâm đến loại vàng miếng phổ biến nhất
+		if strings.Contains(label, "SJC 1L, 10L") {
+			// Lấy giá mua ở cột thứ 2
+			buyPrice = s.Find("td").Eq(1).Text()
+			// Lấy giá bán ở cột thứ 3
+			sellPrice = s.Find("td").Eq(2).Text()
+
+			// Lấy thời gian cập nhật ở hàng trên cùng của bảng
+			updateTime = doc.Find("#giasjc .updated").Text()
+
+			// Đã tìm thấy, không cần duyệt nữa
+			return false 
 		}
+		// Nếu không tìm thấy, tiếp tục duyệt
+		return true
+	})
+
+	if buyPrice == "" || sellPrice == "" {
+		return "", fmt.Errorf("không tìm thấy giá vàng SJC 1L trên trang (cấu trúc có thể đã thay đổi)")
 	}
+	
+	// Format lại chuỗi kết quả cho đẹp
+	var result strings.Builder
+	result.WriteString("🇻🇳 **Giá Vàng SJC 1L, 10L**\n")
+	result.WriteString(fmt.Sprintf("*(Nguồn: giavang.org, %s)*\n", strings.TrimSpace(updateTime)))
+	result.WriteString("------------------------------------\n")
+	result.WriteString(fmt.Sprintf("  - **Mua vào:** `%s.000 VND`\n", buyPrice))
+	result.WriteString(fmt.Sprintf("  - **Bán ra:**   `%s.000 VND`", sellPrice))
+
 	return result.String(), nil
 }
 
@@ -171,27 +190,50 @@ func getUsdJpyRate() (string, error) {
 	return fmt.Sprintf("🇺🇸/🇯🇵 **Tỷ giá USD/JPY:** `1 USD = %s JPY`", formatFloat(jpyRate)), nil
 }
 
-// Lấy tỷ giá JPY/VND (từ Vietcombank)
-func getJpyVndRate() (string, error) {
-	resp, err := http.Get("https://portal.vietcombank.com.vn/Usercontrols/TV_TyGia/TyGia.aspx")
+// ---- HÀM TIỆN ÍCH ĐỂ THỰC HIỆN YÊU CẦU HTTP ----
+// Chúng ta cần hàm này vì Google sẽ chặn nếu không có User-Agent giống trình duyệt
+func makeRequest(url string) (*http.Response, error) {
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	defer resp.Body.Close()
-	
-	byteValue, _ := io.ReadAll(resp.Body)
-    var vcbData VcbExrateList
-    xml.Unmarshal(byteValue, &vcbData)
 
-	for _, rate := range vcbData.Exrate {
-		if rate.CurrencyCode == "JPY" {
-			return fmt.Sprintf("🇯🇵/🇻🇳 **Tỷ giá JPY/VND (Vietcombank):**\n  - Mua (chuyển khoản): `%s VND`\n  - Bán: `%s VND`", rate.Transfer, rate.Sell), nil
-		}
-	}
+	// Giả mạo User-Agent để yêu cầu trông giống như từ một trình duyệt thật
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
 	
-	return "", fmt.Errorf("không tìm thấy tỷ giá JPY")
+	return client.Do(req)
 }
 
+// Lấy tỷ giá JPY/VND từ Google Finance
+func getJpyVndRate() (string, error) {
+	url := "https://www.google.com/finance/quote/JPY-VND"
+	
+	res, err := makeRequest(url)
+	if err != nil {
+		return "", fmt.Errorf("không thể truy cập Google Finance: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		return "", fmt.Errorf("Google Finance trả về mã lỗi: %d", res.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		return "", fmt.Errorf("lỗi đọc dữ liệu trang: %v", err)
+	}
+
+	// Đây là CSS Selector cho thẻ div chứa giá trị tỷ giá trên trang Google Finance
+	// Selector này có thể thay đổi trong tương lai nếu Google cập nhật trang web
+	priceStr := doc.Find(".YMlKec.fxKbKc").First().Text()
+
+	if priceStr == "" {
+		return "", fmt.Errorf("không tìm thấy tỷ giá trên trang Google Finance (có thể cấu trúc trang đã thay đổi)")
+	}
+
+	return fmt.Sprintf("🇯🇵/🇻🇳 **Tỷ giá JPY/VND (Google Finance):**\n`1 JPY = %s VND`", priceStr), nil
+}
 
 // ---- HÀM GỬI TIN NHẮN & HANDLER CHÍNH ----
 

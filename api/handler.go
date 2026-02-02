@@ -127,6 +127,21 @@ var goldTypeOrder = []string{
 
 // ---- CÁC HÀM LẤY DỮ LIỆU ----
 
+// ---- HÀM TIỆN ÍCH ĐỂ THỰC HIỆN YÊU CẦU HTTP ----
+// Chúng ta cần hàm này vì Google sẽ chặn nếu không có User-Agent giống trình duyệt
+func makeRequest(url string) (*http.Response, error) {
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Giả mạo User-Agent để yêu cầu trông giống như từ một trình duyệt thật
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
+
+	return client.Do(req)
+}
+
 // Lấy giá Bitcoin
 func getBitcoinPrice() (string, error) {
 	resp, err := http.Get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd")
@@ -235,20 +250,6 @@ func getUsdJpyRate() (string, error) {
 	return fmt.Sprintf("🇺🇸/🇯🇵 **Tỷ giá USD/JPY:** `1 USD = %s JPY`", formatFloat(jpyRate)), nil
 }
 
-// ---- HÀM TIỆN ÍCH ĐỂ THỰC HIỆN YÊU CẦU HTTP ----
-// Chúng ta cần hàm này vì Google sẽ chặn nếu không có User-Agent giống trình duyệt
-func makeRequest(url string) (*http.Response, error) {
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Giả mạo User-Agent để yêu cầu trông giống như từ một trình duyệt thật
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
-
-	return client.Do(req)
-}
 
 // Lấy tỷ giá JPY/VND từ Google Finance
 func getJpyVndRate() (string, error) {

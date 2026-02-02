@@ -2,7 +2,7 @@ name: Hourly Gold Price Update
 
 on:
   schedule:
-    - cron: '0 * * * *' # Runs at minute 0 of every hour
+    - cron: '*/5 * * * *' # Runs at minute 0 of every hour
   workflow_dispatch: # Allows manual triggering from GitHub UI
 
 jobs:

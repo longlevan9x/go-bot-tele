@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -307,10 +308,20 @@ func sendTelegramMessage(chatID int, text string) {
 
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", telegramToken)
 
-	// Dùng Markdown để format cho đẹp
-	payload := fmt.Sprintf(`{"chat_id":%d, "text":"%s", "parse_mode":"Markdown"}`, chatID, text)
+	// Sử dụng struct hoặc map để marshal JSON chuẩn
+	reqBody := map[string]interface{}{
+		"chat_id":    chatID,
+		"text":       text,
+		"parse_mode": "Markdown",
+	}
 
-	_, err := http.Post(apiURL, "application/json", strings.NewReader(payload))
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		log.Printf("Error marshaling JSON: %v", err)
+		return
+	}
+
+	_, err = http.Post(apiURL, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		log.Printf("Error sending message to Telegram: %v", err)
 	}

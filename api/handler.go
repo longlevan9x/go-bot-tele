@@ -79,6 +79,51 @@ type VcbExrate struct {
 	Sell         string `xml:"Sell,attr"`
 }
 
+// Struct cho APi vang.today
+type VangTodayResponse struct {
+	Success   bool                `json:"success"`
+	Timestamp int64               `json:"timestamp"`
+	Prices    map[string]GoldItem `json:"prices"`
+}
+
+type GoldItem struct {
+	Name       string  `json:"name"`
+	Buy        float64 `json:"buy"`
+	Sell       float64 `json:"sell"`
+	ChangeBuy  float64 `json:"change_buy"`
+	ChangeSell float64 `json:"change_sell"`
+	Currency   string  `json:"currency"`
+}
+
+var goldTypeMap = map[string]string{
+	"XAUUSD":      "Vàng Thế Giới (XAU/USD)",
+	"SJL1L10":     "SJC 9999",
+	"SJ9999":      "Nhẫn SJC",
+	"DOHNL":       "DOJI Hà Nội",
+	"DOHCML":      "DOJI HCM",
+	"DOJINHTV":    "DOJI Nữ Trang",
+	"BTSJC":       "Bảo Tín SJC",
+	"BT9999NTT":   "Bảo Tín 9999",
+	"PQHNVM":      "PNJ Hà Nội",
+	"PQHN24NTT":   "PNJ 24K",
+	"VNGSJC":      "VN Gold SJC",
+	"VIETTINMSJC": "Viettin SJC",
+}
+
+var goldTypeOrder = []string{
+	"XAUUSD",
+	"SJL1L10",
+	"SJ9999",
+	"DOHNL",
+	"DOHCML",
+	"DOJINHTV",
+	"BTSJC",
+	"BT9999NTT",
+	"PQHNVM",
+	"PQHN24NTT",
+	"VNGSJC",
+	"VIETTINMSJC",
+}
 
 // ---- CÁC HÀM LẤY DỮ LIỆU ----
 
@@ -118,56 +163,57 @@ func getGlobalGoldPrice() (string, error) {
 	return fmt.Sprintf("🥇 **Giá Vàng Thế Giới (USD/oz):** `$%s`", formatFloat(price)), nil
 }
 
-// Lấy giá vàng SJC từ trang giavang.org
+// Lấy giá vàng tổng hợp từ vang.today
 func getVnGoldPrice() (string, error) {
-	url := "https://giavang.org/"
+	url := "https://www.vang.today/api/prices"
 
 	res, err := makeRequest(url)
 	if err != nil {
-		return "", fmt.Errorf("không thể truy cập giavang.org: %v", err)
+		return "", fmt.Errorf("không thể truy cập vang.today: %v", err)
 	}
 	defer res.Body.Close()
 
-	doc, err := goquery.NewDocumentFromReader(res.Body)
-	if err != nil {
-		return "", fmt.Errorf("lỗi đọc dữ liệu trang: %v", err)
+	var data VangTodayResponse
+	if err := json.NewDecoder(res.Body).Decode(&data); err != nil {
+		return "", fmt.Errorf("lỗi đọc dữ liệu API: %v", err)
 	}
 
-	var buyPrice, sellPrice, updateTime string
-
-	// Tìm đến bảng giá SJC và duyệt qua từng hàng
-	doc.Find("#giasjc tbody tr").EachWithBreak(func(i int, s *goquery.Selection) bool {
-		// Lấy tên loại vàng ở cột đầu tiên
-		label := s.Find("td").First().Text()
-
-		// Chúng ta chỉ quan tâm đến loại vàng miếng phổ biến nhất
-		if strings.Contains(label, "SJC 1L, 10L") {
-			// Lấy giá mua ở cột thứ 2
-			buyPrice = s.Find("td").Eq(1).Text()
-			// Lấy giá bán ở cột thứ 3
-			sellPrice = s.Find("td").Eq(2).Text()
-
-			// Lấy thời gian cập nhật ở hàng trên cùng của bảng
-			updateTime = doc.Find("#giasjc .updated").Text()
-
-			// Đã tìm thấy, không cần duyệt nữa
-			return false 
-		}
-		// Nếu không tìm thấy, tiếp tục duyệt
-		return true
-	})
-
-	if buyPrice == "" || sellPrice == "" {
-		return "", fmt.Errorf("không tìm thấy giá vàng SJC 1L trên trang (cấu trúc có thể đã thay đổi)")
+	if !data.Success || len(data.Prices) == 0 {
+		return "", fmt.Errorf("API không trả về dữ liệu thành công")
 	}
-	
-	// Format lại chuỗi kết quả cho đẹp
+
+	// data.Prices chính là map chúng ta cần
+	dataMap := data.Prices
+
+	// Format lại chuỗi kết quả
 	var result strings.Builder
-	result.WriteString("🇻🇳 **Giá Vàng SJC 1L, 10L**\n")
-	result.WriteString(fmt.Sprintf("*(Nguồn: giavang.org, %s)*\n", strings.TrimSpace(updateTime)))
+	result.WriteString("🏆 **Bảng Giá Vàng Tổng Hợp**\n")
 	result.WriteString("------------------------------------\n")
-	result.WriteString(fmt.Sprintf("  - **Mua vào:** `%s.000 VND`\n", buyPrice))
-	result.WriteString(fmt.Sprintf("  - **Bán ra:**   `%s.000 VND`", sellPrice))
+
+	// Duyệt qua danh sách order để in theo thứ tự
+	for _, code := range goldTypeOrder {
+		item, exists := dataMap[code]
+		if !exists {
+			continue
+		}
+
+		name := goldTypeMap[code]
+
+		// Xử lý hiển thị
+		var buyStr, sellStr string
+
+		if code == "XAUUSD" {
+			buyStr = fmt.Sprintf("$%s", formatFloat(item.Buy))
+			sellStr = fmt.Sprintf("$%s", formatFloat(item.Sell))
+		} else {
+			buyStr = fmt.Sprintf("%s VND", formatInt(int64(item.Buy)))
+			sellStr = fmt.Sprintf("%s VND", formatInt(int64(item.Sell)))
+		}
+
+		result.WriteString(fmt.Sprintf("🔸 **%s**\n", name))
+		result.WriteString(fmt.Sprintf("   • Mua: `%s`\n", buyStr))
+		result.WriteString(fmt.Sprintf("   • Bán: `%s`\n", sellStr))
+	}
 
 	return result.String(), nil
 }
@@ -200,14 +246,14 @@ func makeRequest(url string) (*http.Response, error) {
 
 	// Giả mạo User-Agent để yêu cầu trông giống như từ một trình duyệt thật
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
-	
+
 	return client.Do(req)
 }
 
 // Lấy tỷ giá JPY/VND từ Google Finance
 func getJpyVndRate() (string, error) {
 	url := "https://www.google.com/finance/quote/JPY-VND"
-	
+
 	res, err := makeRequest(url)
 	if err != nil {
 		return "", fmt.Errorf("không thể truy cập Google Finance: %v", err)
@@ -245,7 +291,7 @@ func sendTelegramMessage(chatID int, text string) {
 	}
 
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", telegramToken)
-	
+
 	// Dùng Markdown để format cho đẹp
 	payload := fmt.Sprintf(`{"chat_id":%d, "text":"%s", "parse_mode":"Markdown"}`, chatID, text)
 
@@ -289,7 +335,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	default:
 		responseText = "Lệnh không hợp lệ. Hãy thử /start để xem các lệnh có sẵn."
 	}
-	
+
 	if err != nil {
 		log.Printf("Error getting data for command %s: %v", update.Message.Text, err)
 		responseText = fmt.Sprintf("Rất tiếc, đã có lỗi xảy ra khi lấy dữ liệu cho lệnh %s. Vui lòng thử lại sau.", update.Message.Text)
@@ -305,15 +351,41 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 // ---- HÀM TIỆN ÍCH ----
 // Format số float cho dễ đọc
 func formatFloat(num float64) string {
-    s := strconv.FormatFloat(num, 'f', 2, 64)
-    parts := strings.Split(s, ".")
-    integerPart := parts[0]
-    result := ""
-    for i, c := range integerPart {
-        if i > 0 && (len(integerPart)-i)%3 == 0 {
-            result += ","
-        }
-        result += string(c)
-    }
-    return result + "." + parts[1]
+	s := strconv.FormatFloat(num, 'f', 2, 64)
+	parts := strings.Split(s, ".")
+	integerPart := parts[0]
+	result := ""
+	for i, c := range integerPart {
+		if i > 0 && (len(integerPart)-i)%3 == 0 {
+			result += ","
+		}
+		result += string(c)
+	}
+	return result + "." + parts[1]
+}
+
+// Format số int có dấu phẩy ngăn cách hàng nghìn
+func formatInt(n int64) string {
+	in := strconv.FormatInt(n, 10)
+	numOfDigits := len(in)
+	if n < 0 {
+		numOfDigits-- // First character is the - sign (not a digit)
+	}
+	numOfCommas := (numOfDigits - 1) / 3
+
+	out := make([]byte, len(in)+numOfCommas)
+	if n < 0 {
+		in, out[0] = in[1:], '-'
+	}
+
+	for i, j, k := len(in)-1, len(out)-1, 0; ; i, j = i-1, j-1 {
+		out[j] = in[i]
+		if i == 0 {
+			return string(out)
+		}
+		if k++; k == 3 {
+			j, k = j-1, 0
+			out[j] = ','
+		}
+	}
 }

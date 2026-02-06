@@ -46,8 +46,9 @@ type ExchangeRate struct {
 
 // Struct cho webhook từ Telegram
 type Update struct {
-	UpdateID int     `json:"update_id"`
-	Message  Message `json:"message"`
+	UpdateID      int            `json:"update_id"`
+	Message       *Message       `json:"message,omitempty"`
+	CallbackQuery *CallbackQuery `json:"callback_query,omitempty"`
 }
 
 type Message struct {
@@ -57,6 +58,13 @@ type Message struct {
 
 type Chat struct {
 	ID int `json:"id"`
+}
+
+// CallbackQuery khi user bấm nút inline
+type CallbackQuery struct {
+	ID      string   `json:"id"`
+	Message *Message `json:"message"`
+	Data    string   `json:"data"`
 }
 
 // Struct cho XML giá vàng SJC
@@ -338,6 +346,92 @@ func sendTelegramMessage(chatID int, text string) {
 	}
 }
 
+// InlineKeyboardButton cho Telegram
+type InlineKeyboardButton struct {
+	Text         string `json:"text"`
+	CallbackData string `json:"callback_data,omitempty"`
+}
+
+// Gửi tin nhắn kèm bàn phím inline (các nút bấm)
+func sendTelegramMessageWithButtons(chatID int, text string, buttons [][]InlineKeyboardButton) {
+	telegramToken := os.Getenv("TELEGRAM_TOKEN")
+	if telegramToken == "" {
+		log.Fatal("TELEGRAM_TOKEN environment variable not set")
+	}
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", telegramToken)
+
+	reqBody := map[string]interface{}{
+		"chat_id":    chatID,
+		"text":       text,
+		"parse_mode": "Markdown",
+		"reply_markup": map[string]interface{}{
+			"inline_keyboard": buttons,
+		},
+	}
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		log.Printf("Error marshaling JSON: %v", err)
+		return
+	}
+	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		log.Printf("Error sending message to Telegram: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		var respBody map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&respBody); err == nil {
+			log.Printf("Telegram API Error: %v", respBody)
+		}
+	}
+}
+
+// Trả lời callback query (bắt buộc để Telegram bỏ trạng thái loading trên nút)
+func answerCallbackQuery(callbackID string) {
+	telegramToken := os.Getenv("TELEGRAM_TOKEN")
+	if telegramToken == "" {
+		return
+	}
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/answerCallbackQuery", telegramToken)
+	reqBody := map[string]interface{}{"callback_query_id": callbackID}
+	jsonBody, _ := json.Marshal(reqBody)
+	http.Post(apiURL, "application/json", bytes.NewBuffer(jsonBody))
+}
+
+// getResponseByCommand trả về nội dung tin nhắn theo mã lệnh (dùng cho cả command và callback_data)
+func getResponseByCommand(cmd string) (string, error) {
+	switch cmd {
+	case "bitcoin":
+		return getBitcoinPrice()
+	case "vang":
+		return getGlobalGoldPrice()
+	case "vangvn":
+		return getVnGoldPrice()
+	case "usdjpy":
+		return getUsdJpyRate()
+	case "jpyvnd":
+		return getJpyVndRate()
+	default:
+		return "Lệnh không hợp lệ. Hãy thử /start để xem các lệnh có sẵn.", nil
+	}
+}
+
+// Bàn phím inline cho tin nhắn /start
+var startInlineKeyboard = [][]InlineKeyboardButton{
+	{
+		{Text: "💰 Bitcoin", CallbackData: "bitcoin"},
+		{Text: "🥇 Vàng TG", CallbackData: "vang"},
+	},
+	{
+		{Text: "🏆 Vàng VN", CallbackData: "vangvn"},
+		{Text: "🇺🇸/🇯🇵 USD/JPY", CallbackData: "usdjpy"},
+	},
+	{
+		{Text: "🇯🇵/🇻🇳 JPY/VND", CallbackData: "jpyvnd"},
+	},
+}
+
 // Hàm handler chính mà Vercel sẽ gọi
 func Handler(w http.ResponseWriter, r *http.Request) {
 	// Kiểm tra xem có phải là cron job không
@@ -389,41 +483,64 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if update.Message.Text == "" {
+	// Xử lý khi user bấm nút inline (callback_query)
+	if update.CallbackQuery != nil {
+		cb := update.CallbackQuery
+		answerCallbackQuery(cb.ID)
+		if cb.Message != nil {
+			chatID := cb.Message.Chat.ID
+			responseText, err := getResponseByCommand(cb.Data)
+			if err != nil {
+				log.Printf("Error getting data for callback %s: %v", cb.Data, err)
+				responseText = "Rất tiếc, đã có lỗi xảy ra khi lấy dữ liệu. Vui lòng thử lại sau."
+			}
+			sendTelegramMessage(chatID, responseText)
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+		return
+	}
+
+	// Xử lý tin nhắn thường
+	if update.Message == nil || update.Message.Text == "" {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
+	chatID := update.Message.Chat.ID
+	text := update.Message.Text
 	var responseText string
 	var err error
 
-	// Phân tích lệnh từ người dùng
-	log.Printf("Received message from Chat ID: %d", update.Message.Chat.ID)
-	switch update.Message.Text {
+	log.Printf("Received message from Chat ID: %d", chatID)
+	switch text {
 	case "/start":
-		responseText = "Chào mừng bạn đến với Bot Tra Cứu Giá! Hãy thử các lệnh: /bitcoin, /vang, /vangvn, /usdjpy, /jpyvnd"
+		welcomeMsg := "Chào mừng bạn đến với Bot Tra Cứu Giá!\n\nChọn một nút bên dưới để tra cứu nhanh:"
+		sendTelegramMessageWithButtons(chatID, welcomeMsg, startInlineKeyboard)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+		return
 	case "/bitcoin":
-		responseText, err = getBitcoinPrice()
+		responseText, err = getResponseByCommand("bitcoin")
 	case "/vang":
-		responseText, err = getGlobalGoldPrice()
+		responseText, err = getResponseByCommand("vang")
 	case "/vangvn":
-		responseText, err = getVnGoldPrice()
+		responseText, err = getResponseByCommand("vangvn")
 	case "/usdjpy":
-		responseText, err = getUsdJpyRate()
+		responseText, err = getResponseByCommand("usdjpy")
 	case "/jpyvnd":
-		responseText, err = getJpyVndRate()
+		responseText, err = getResponseByCommand("jpyvnd")
 	default:
 		responseText = "Lệnh không hợp lệ. Hãy thử /start để xem các lệnh có sẵn."
 	}
 
 	if err != nil {
-		log.Printf("Error getting data for command %s: %v", update.Message.Text, err)
-		responseText = fmt.Sprintf("Rất tiếc, đã có lỗi xảy ra khi lấy dữ liệu cho lệnh %s. Vui lòng thử lại sau.", update.Message.Text)
+		log.Printf("Error getting data for command %s: %v", text, err)
+		responseText = fmt.Sprintf("Rất tiếc, đã có lỗi xảy ra khi lấy dữ liệu cho lệnh %s. Vui lòng thử lại sau.", text)
 	}
 
-	sendTelegramMessage(update.Message.Chat.ID, responseText)
+	sendTelegramMessage(chatID, responseText)
 
-	// Phản hồi lại cho Vercel là đã xử lý xong
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }

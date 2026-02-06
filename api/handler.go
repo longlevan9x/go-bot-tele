@@ -178,7 +178,9 @@ func getBitcoinPrice() (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("💰 **Giá Bitcoin (USD):** `$%s`", formatFloat(price.Bitcoin.USD)), nil
+	msg := fmt.Sprintf("💰 **Giá Bitcoin (USD):** `$%s`", formatFloat(price.Bitcoin.USD))
+	msg += "\n\n🔗 [Xem chi tiết](https://www.coingecko.com/en/coins/bitcoin)"
+	return msg, nil
 }
 
 // Lấy giá vàng thế giới (API vang.today)
@@ -199,12 +201,14 @@ func getGlobalGoldPrice() (string, error) {
 		return "", fmt.Errorf("API không trả về dữ liệu thành công")
 	}
 
-	return fmt.Sprintf("🥇 **Giá Vàng Thế Giới (USD/oz):** `$%s`", formatFloat(data.Buy)), nil
+	msg := fmt.Sprintf("🥇 **Giá Vàng Thế Giới (USD/oz):** `$%s`", formatFloat(data.Buy))
+	msg += "\n\n🔗 [Xem chi tiết](https://www.vang.today)"
+	return msg, nil
 }
 
 // Lấy giá vàng tổng hợp từ vang.today
 func getVnGoldPrice() (string, error) {
-	url := "https://www.vang.today/api/prices"
+	url := "https://www.vang.today/api/prices?type=VNGSJC"
 
 	res, err := makeRequest(url)
 	if err != nil {
@@ -253,7 +257,7 @@ func getVnGoldPrice() (string, error) {
 		result.WriteString(fmt.Sprintf("   • Mua: `%s`\n", buyStr))
 		result.WriteString(fmt.Sprintf("   • Bán: `%s`\n", sellStr))
 	}
-
+	result.WriteString("\n🔗 [Xem chi tiết](https://www.vang.today)")
 	return result.String(), nil
 }
 
@@ -271,7 +275,9 @@ func getUsdJpyRate() (string, error) {
 	}
 
 	jpyRate := rates.Rates["JPY"]
-	return fmt.Sprintf("🇺🇸/🇯🇵 **Tỷ giá USD/JPY:** `1 USD = %s JPY`", formatFloat(jpyRate)), nil
+	msg := fmt.Sprintf("🇺🇸/🇯🇵 **Tỷ giá USD/JPY:** `1 USD = %s JPY`", formatFloat(jpyRate))
+	msg += "\n\n🔗 [Xem chi tiết](https://www.google.com/finance/quote/USD-JPY)"
+	return msg, nil
 }
 
 // Lấy tỷ giá JPY/VND từ Google Finance
@@ -301,7 +307,9 @@ func getJpyVndRate() (string, error) {
 		return "", fmt.Errorf("không tìm thấy tỷ giá trên trang Google Finance (có thể cấu trúc trang đã thay đổi)")
 	}
 
-	return fmt.Sprintf("🇯🇵/🇻🇳 **Tỷ giá JPY/VND (Google Finance):**\n`1 JPY = %s VND`", priceStr), nil
+	msg := fmt.Sprintf("🇯🇵/🇻🇳 **Tỷ giá JPY/VND (Google Finance):**\n`1 JPY = %s VND`", priceStr)
+	msg += "\n\n🔗 [Xem chi tiết](https://www.google.com/finance/quote/JPY-VND)"
+	return msg, nil
 }
 
 // ---- HÀM GỬI TIN NHẮN & HANDLER CHÍNH ----

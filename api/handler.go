@@ -18,9 +18,14 @@ import (
 
 // Struct cho APi vang.today
 type VangTodayResponse struct {
-	Success   bool                `json:"success"`
-	Timestamp int64               `json:"timestamp"`
-	Prices    map[string]GoldItem `json:"prices"`
+	Success    bool    `json:"success"`
+	Timestamp  int64   `json:"timestamp"`
+	Type       string  `json:"type"`
+	Name       string  `json:"name"`
+	Buy        float64 `json:"buy"`
+	Sell       float64 `json:"sell"`
+	ChangeBuy  float64 `json:"change_buy"`
+	ChangeSell float64 `json:"change_sell"`
 }
 
 type GoldItem struct {
@@ -221,44 +226,13 @@ func getVnGoldPrice() (string, error) {
 		return "", fmt.Errorf("lỗi đọc dữ liệu API: %v", err)
 	}
 
-	if !data.Success || len(data.Prices) == 0 {
+	if !data.Success {
 		return "", fmt.Errorf("API không trả về dữ liệu thành công")
 	}
 
-	// data.Prices chính là map chúng ta cần
-	dataMap := data.Prices
-
-	// Format lại chuỗi kết quả
-	var result strings.Builder
-	result.WriteString("🏆 **Bảng Giá Vàng Tổng Hợp**\n")
-	result.WriteString("------------------------------------\n")
-
-	// Duyệt qua danh sách order để in theo thứ tự
-	for _, code := range goldTypeOrder {
-		item, exists := dataMap[code]
-		if !exists {
-			continue
-		}
-
-		name := goldTypeMap[code]
-
-		// Xử lý hiển thị
-		var buyStr, sellStr string
-
-		if code == "XAUUSD" {
-			buyStr = fmt.Sprintf("$%s", formatFloat(item.Buy))
-			sellStr = fmt.Sprintf("$%s", formatFloat(item.Sell))
-		} else {
-			buyStr = fmt.Sprintf("%s VND", formatInt(int64(item.Buy)))
-			sellStr = fmt.Sprintf("%s VND", formatInt(int64(item.Sell)))
-		}
-
-		result.WriteString(fmt.Sprintf("🔸 **%s**\n", name))
-		result.WriteString(fmt.Sprintf("   • Mua: `%s`\n", buyStr))
-		result.WriteString(fmt.Sprintf("   • Bán: `%s`\n", sellStr))
-	}
-	result.WriteString("\n🔗 [Xem chi tiết](https://www.vang.today)")
-	return result.String(), nil
+	msg := fmt.Sprintf("🥇 **Giá Vàng VN (VNGSJC/oz):** `%s`", formatFloat(data.Buy))
+	msg += "\n\n🔗 [Xem chi tiết](https://www.vang.today)"
+	return msg, nil
 }
 
 // Lấy tỷ giá USD/JPY
